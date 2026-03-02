@@ -5,6 +5,7 @@ version = "0.1.0"
 
 [dependencies]
 dioxus = {version = "0.7.3", features = ["web", "router"]}
+rustfft = "6.4.1"
 
 [profile]
 
