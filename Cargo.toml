@@ -5,3 +5,15 @@ version = "0.1.0"
 
 [dependencies]
 dioxus = {version = "0.7.3", features = ["web"]}
+
+[profile]
+
+[profile.wasm-dev]
+inherits = "dev"
+opt-level = 1
+
+[profile.server-dev]
+inherits = "dev"
+
+[profile.android-dev]
+inherits = "dev"
