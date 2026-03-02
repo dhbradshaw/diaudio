@@ -18,8 +18,8 @@ Draw a wave form on the left and see its FFT on the right.
 
 Implementation checklist:
 
-- [ ] Add page component and route registration for `/fft-draw`.
-- [ ] Build a two-panel layout (waveform draw area on left, FFT output on right).
+- [x] Add page component and route registration for `/fft-draw`.
+- [x] Build a two-panel layout (waveform draw area on left, FFT output on right).
 - [ ] Implement pointer/mouse drawing on the waveform canvas.
 - [ ] Normalize drawn points into a fixed-size sample buffer.
 - [ ] Run FFT on the sample buffer (real input to frequency bins).
