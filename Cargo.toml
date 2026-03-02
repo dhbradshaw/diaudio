@@ -4,7 +4,7 @@ name = "diaudio"
 version = "0.1.0"
 
 [dependencies]
-dioxus = {version = "0.7.3", features = ["web"]}
+dioxus = {version = "0.7.3", features = ["web", "router"]}
 
 [profile]
 
