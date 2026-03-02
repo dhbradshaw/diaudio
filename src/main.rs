@@ -1,3 +1,13 @@
+use dioxus::prelude::*;
+
 fn main() {
-    println!("Hello, world!");
+    launch(App);
+}
+
+#[component]
+fn App() -> Element {
+    rsx! {
+        document::Title { "Diaudio" }
+        h1 { "Diaudio" }
+    }
 }
