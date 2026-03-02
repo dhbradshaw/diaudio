@@ -70,6 +70,14 @@ fn FftDraw() -> Element {
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 1rem;",
                 h2 { "Waveform" }
                 p { "Click and drag to draw." }
+                button {
+                    r#type: "button",
+                    onclick: move |_| {
+                        is_drawing.set(false);
+                        waveform_points.set(Vec::new());
+                    },
+                    "Clear"
+                }
                 svg {
                     view_box: "0 0 600 240",
                     width: "100%",
