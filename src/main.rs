@@ -4,6 +4,8 @@ use rustfft::{FftPlanner, num_complex::Complex};
 const WAVEFORM_WIDTH: f64 = 600.0;
 const WAVEFORM_HEIGHT: f64 = 240.0;
 const DEFAULT_SAMPLE_SIZE: usize = 256;
+const FFT_CHART_WIDTH: f64 = 600.0;
+const FFT_CHART_HEIGHT: f64 = 240.0;
 
 fn upsert_waveform_point(points: &mut Vec<(f64, f64)>, x: f64, y: f64) {
     let x = x.round().clamp(0.0, WAVEFORM_WIDTH - 1.0);
@@ -82,6 +84,21 @@ fn run_fft(samples: &[f64]) -> Vec<Complex<f64>> {
     buffer
 }
 
+fn fft_magnitudes(fft_bins: &[Complex<f64>]) -> Vec<f64> {
+    if fft_bins.is_empty() {
+        return Vec::new();
+    }
+
+    let half_len = fft_bins.len() / 2;
+    let scale = 1.0 / fft_bins.len() as f64;
+
+    fft_bins
+        .iter()
+        .take(half_len)
+        .map(|bin| bin.norm() * scale)
+        .collect()
+}
+
 fn main() {
     launch(App);
 }
@@ -133,11 +150,10 @@ fn FftDraw() -> Element {
     let normalized_sample_count = normalized_samples.len();
     let first_sample = normalized_samples.first().copied().unwrap_or(0.0);
     let fft_bins = run_fft(&normalized_samples);
-    let fft_bin_count = fft_bins.len();
-    let first_fft_bin = fft_bins
-        .first()
-        .copied()
-        .unwrap_or_else(|| Complex::new(0.0, 0.0));
+    let magnitude_bins = fft_magnitudes(&fft_bins);
+    let magnitude_bin_count = magnitude_bins.len();
+    let first_magnitude = magnitude_bins.first().copied().unwrap_or(0.0);
+    let max_magnitude = magnitude_bins.iter().copied().fold(0.0, f64::max);
 
     rsx! {
         h1 { "FFT Draw" }
@@ -189,11 +205,39 @@ fn FftDraw() -> Element {
             }
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 1rem;",
                 h2 { "FFT" }
-                p { "Spectrum placeholder" }
+                svg {
+                    view_box: "0 0 600 240",
+                    width: "100%",
+                    height: "240",
+                    style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
+                    for (index , magnitude) in magnitude_bins.iter().enumerate() {
+                        {
+                            let bar_width = FFT_CHART_WIDTH / magnitude_bin_count as f64;
+                            let normalized = if max_magnitude > 0.0 {
+                                *magnitude / max_magnitude
+                            } else {
+                                0.0
+                            };
+                            let bar_height = (normalized * FFT_CHART_HEIGHT).clamp(0.0, FFT_CHART_HEIGHT);
+                            let x = index as f64 * bar_width;
+                            let y = FFT_CHART_HEIGHT - bar_height;
+                            rsx! {
+                                rect {
+                                    x: "{x}",
+                                    y: "{y}",
+                                    width: "{bar_width}",
+                                    height: "{bar_height}",
+                                    fill: "currentColor",
+                                }
+                            }
+                        }
+                    }
+                }
                 p { "Normalized samples: {normalized_sample_count}" }
                 p { "First sample: {first_sample}" }
-                p { "FFT bins: {fft_bin_count}" }
-                p { "First FFT bin (re, im): {first_fft_bin.re}, {first_fft_bin.im}" }
+                p { "Magnitude bins: {magnitude_bin_count}" }
+                p { "First magnitude: {first_magnitude}" }
+                p { "Max magnitude: {max_magnitude}" }
             }
         }
         Link { to: Route::Home {}, "Back to Home" }
