@@ -6,6 +6,7 @@ const WAVEFORM_HEIGHT: f64 = 240.0;
 const DEFAULT_SAMPLE_SIZE: usize = 256;
 const FFT_CHART_WIDTH: f64 = 600.0;
 const FFT_CHART_HEIGHT: f64 = 240.0;
+const SAMPLE_SIZE_OPTIONS: [usize; 4] = [128, 256, 512, 1024];
 
 fn upsert_waveform_point(points: &mut Vec<(f64, f64)>, x: f64, y: f64) {
     let x = x.round().clamp(0.0, WAVEFORM_WIDTH - 1.0);
@@ -137,6 +138,7 @@ fn Home() -> Element {
 fn FftDraw() -> Element {
     let mut waveform_points = use_signal(Vec::<(f64, f64)>::new);
     let mut is_drawing = use_signal(|| false);
+    let mut sample_size = use_signal(|| DEFAULT_SAMPLE_SIZE);
 
     let waveform_snapshot = waveform_points.read().clone();
 
@@ -146,7 +148,8 @@ fn FftDraw() -> Element {
         .collect::<Vec<_>>()
         .join(" ");
 
-    let normalized_samples = normalize_waveform(&waveform_snapshot, DEFAULT_SAMPLE_SIZE);
+    let current_sample_size = *sample_size.read();
+    let normalized_samples = normalize_waveform(&waveform_snapshot, current_sample_size);
     let normalized_sample_count = normalized_samples.len();
     let first_sample = normalized_samples.first().copied().unwrap_or(0.0);
     let fft_bins = run_fft(&normalized_samples);
@@ -161,13 +164,27 @@ fn FftDraw() -> Element {
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 1rem;",
                 h2 { "Waveform" }
                 p { "Click and drag to draw." }
-                button {
-                    r#type: "button",
-                    onclick: move |_| {
-                        is_drawing.set(false);
-                        waveform_points.set(Vec::new());
-                    },
-                    "Clear"
+                div { style: "display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;",
+                    button {
+                        r#type: "button",
+                        onclick: move |_| {
+                            is_drawing.set(false);
+                            waveform_points.set(Vec::new());
+                        },
+                        "Clear"
+                    }
+                    label { "Sample size" }
+                    select {
+                        value: "{current_sample_size}",
+                        onchange: move |event| {
+                            if let Ok(next_size) = event.value().parse::<usize>() {
+                                sample_size.set(next_size);
+                            }
+                        },
+                        for option_size in SAMPLE_SIZE_OPTIONS {
+                            option { value: "{option_size}", "{option_size}" }
+                        }
+                    }
                 }
                 svg {
                     view_box: "0 0 600 240",
@@ -234,6 +251,7 @@ fn FftDraw() -> Element {
                     }
                 }
                 p { "Normalized samples: {normalized_sample_count}" }
+                p { "Selected sample size: {current_sample_size}" }
                 p { "First sample: {first_sample}" }
                 p { "Magnitude bins: {magnitude_bin_count}" }
                 p { "First magnitude: {first_magnitude}" }

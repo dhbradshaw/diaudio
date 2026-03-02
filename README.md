@@ -25,7 +25,7 @@ Implementation checklist:
 - [x] Run FFT on the sample buffer (real input to frequency bins).
 - [x] Convert FFT output to magnitudes (linear or dB scale).
 - [x] Render FFT bins as a chart/bars on the right panel.
-- [ ] Add controls for clear/reset and sample-size selection.
+- [x] Add controls for clear/reset and sample-size selection.
 - [ ] Add axis labels or frequency markers for readability.
 - [ ] Handle empty/flat input and other edge cases gracefully.
 - [ ] Verify behavior in wasm/web target and document any limitations.
