@@ -9,9 +9,15 @@ const FFT_CHART_WIDTH: f64 = 600.0;
 const FFT_CHART_HEIGHT: f64 = 240.0;
 const SAMPLE_SIZE_OPTIONS: [usize; 4] = [128, 256, 512, 1024];
 
+fn clamp_waveform_coordinates(x: f64, y: f64) -> (f64, f64) {
+    (
+        x.round().clamp(0.0, WAVEFORM_WIDTH - 1.0),
+        y.clamp(0.0, WAVEFORM_HEIGHT),
+    )
+}
+
 fn upsert_waveform_point(points: &mut Vec<(f64, f64)>, x: f64, y: f64) {
-    let x = x.round().clamp(0.0, WAVEFORM_WIDTH - 1.0);
-    let y = y.clamp(0.0, WAVEFORM_HEIGHT);
+    let (x, y) = clamp_waveform_coordinates(x, y);
 
     if let Some((_, existing_y)) = points
         .iter_mut()
@@ -22,6 +28,33 @@ fn upsert_waveform_point(points: &mut Vec<(f64, f64)>, x: f64, y: f64) {
         points.push((x, y));
         points.sort_by(|a, b| a.0.total_cmp(&b.0));
     }
+}
+
+fn draw_waveform_segment(points: &mut Vec<(f64, f64)>, start: (f64, f64), end: (f64, f64)) {
+    let (x0, y0) = clamp_waveform_coordinates(start.0, start.1);
+    let (x1, y1) = clamp_waveform_coordinates(end.0, end.1);
+
+    if (x1 - x0).abs() < f64::EPSILON {
+        upsert_waveform_point(points, x1, y1);
+        return;
+    }
+
+    let min_x = x0.min(x1);
+    let max_x = x0.max(x1);
+    let start_x = min_x as i32;
+    let end_x = max_x as i32;
+    let dx = x1 - x0;
+
+    points.retain(|(x, _)| *x < min_x || *x > max_x);
+
+    for xi in start_x..=end_x {
+        let x = xi as f64;
+        let alpha = ((x - x0) / dx).clamp(0.0, 1.0);
+        let y = y0 + alpha * (y1 - y0);
+        points.push((x, y.clamp(0.0, WAVEFORM_HEIGHT)));
+    }
+
+    points.sort_by(|a, b| a.0.total_cmp(&b.0));
 }
 
 fn normalize_waveform(points: &[(f64, f64)], sample_size: usize) -> Vec<f64> {
@@ -204,6 +237,7 @@ fn fft_line_points(values: &[f64], min_value: f64, max_value: f64) -> String {
 pub fn FftDraw() -> Element {
     let mut waveform_points = use_signal(Vec::<(f64, f64)>::new);
     let mut is_drawing = use_signal(|| false);
+    let mut last_draw_position = use_signal(|| None::<(f64, f64)>);
     let mut sample_size = use_signal(|| DEFAULT_SAMPLE_SIZE);
     let mut lowpass_cutoff_percent = use_signal(|| 100.0f64);
 
@@ -280,6 +314,7 @@ pub fn FftDraw() -> Element {
                         r#type: "button",
                         onclick: move |_| {
                             is_drawing.set(false);
+                            last_draw_position.set(None);
                             waveform_points.set(Vec::new());
                         },
                         "Clear"
@@ -289,6 +324,7 @@ pub fn FftDraw() -> Element {
                         disabled: fft_bins_for_reconstruction.is_empty(),
                         onclick: move |_| {
                             is_drawing.set(false);
+                            last_draw_position.set(None);
                             let reconstructed_samples = run_ifft(&fft_bins_for_reconstruction);
                             let reconstructed_points = samples_to_waveform_points(&reconstructed_samples);
                             waveform_points.set(reconstructed_points);
@@ -332,8 +368,10 @@ pub fn FftDraw() -> Element {
                     onmousedown: move |event| {
                         is_drawing.set(true);
                         let coordinates = event.element_coordinates();
+                        let (x, y) = clamp_waveform_coordinates(coordinates.x, coordinates.y);
+                        last_draw_position.set(Some((x, y)));
                         let mut points = waveform_points.write();
-                        upsert_waveform_point(&mut points, coordinates.x, coordinates.y);
+                        upsert_waveform_point(&mut points, x, y);
                     },
                     onmousemove: move |event| {
                         if !*is_drawing.read() {
@@ -341,14 +379,23 @@ pub fn FftDraw() -> Element {
                         }
 
                         let coordinates = event.element_coordinates();
+                        let current = clamp_waveform_coordinates(coordinates.x, coordinates.y);
+                        let previous = *last_draw_position.read();
                         let mut points = waveform_points.write();
-                        upsert_waveform_point(&mut points, coordinates.x, coordinates.y);
+                        if let Some(previous) = previous {
+                            draw_waveform_segment(&mut points, previous, current);
+                        } else {
+                            upsert_waveform_point(&mut points, current.0, current.1);
+                        }
+                        last_draw_position.set(Some(current));
                     },
                     onmouseup: move |_| {
                         is_drawing.set(false);
+                        last_draw_position.set(None);
                     },
                     onmouseleave: move |_| {
                         is_drawing.set(false);
+                        last_draw_position.set(None);
                     },
                     polyline {
                         points: "{waveform_line_points}",
