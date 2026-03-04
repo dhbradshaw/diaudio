@@ -85,19 +85,52 @@ fn run_fft(samples: &[f64]) -> Vec<Complex<f64>> {
     buffer
 }
 
-fn fft_magnitudes(fft_bins: &[Complex<f64>]) -> Vec<f64> {
+fn fft_components(fft_bins: &[Complex<f64>]) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     if fft_bins.is_empty() {
-        return Vec::new();
+        return (Vec::new(), Vec::new(), Vec::new());
     }
 
     let half_len = fft_bins.len() / 2;
     let scale = 1.0 / fft_bins.len() as f64;
 
-    fft_bins
+    let mut real_bins = Vec::with_capacity(half_len);
+    let mut imag_bins = Vec::with_capacity(half_len);
+    let mut amplitude_bins = Vec::with_capacity(half_len);
+
+    for bin in fft_bins.iter().take(half_len) {
+        real_bins.push(bin.re * scale);
+        imag_bins.push(bin.im * scale);
+        amplitude_bins.push(bin.norm() * scale);
+    }
+
+    (real_bins, imag_bins, amplitude_bins)
+}
+
+fn fft_line_points(values: &[f64], min_value: f64, max_value: f64) -> String {
+    if values.is_empty() {
+        return String::new();
+    }
+
+    let width_denominator = (values.len().saturating_sub(1)) as f64;
+    let step_x = if width_denominator > 0.0 {
+        FFT_CHART_WIDTH / width_denominator
+    } else {
+        0.0
+    };
+
+    let value_range = (max_value - min_value).abs().max(f64::EPSILON);
+
+    values
         .iter()
-        .take(half_len)
-        .map(|bin| bin.norm() * scale)
-        .collect()
+        .enumerate()
+        .map(|(index, value)| {
+            let x = index as f64 * step_x;
+            let normalized = ((*value - min_value) / value_range).clamp(0.0, 1.0);
+            let y = FFT_CHART_HEIGHT - (normalized * FFT_CHART_HEIGHT);
+            format!("{x},{y}")
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn main() {
@@ -142,7 +175,7 @@ fn FftDraw() -> Element {
 
     let waveform_snapshot = waveform_points.read().clone();
 
-    let line_points = waveform_snapshot
+    let waveform_line_points = waveform_snapshot
         .iter()
         .map(|(x, y)| format!("{x},{y}"))
         .collect::<Vec<_>>()
@@ -153,10 +186,23 @@ fn FftDraw() -> Element {
     let normalized_sample_count = normalized_samples.len();
     let first_sample = normalized_samples.first().copied().unwrap_or(0.0);
     let fft_bins = run_fft(&normalized_samples);
-    let magnitude_bins = fft_magnitudes(&fft_bins);
-    let magnitude_bin_count = magnitude_bins.len();
-    let first_magnitude = magnitude_bins.first().copied().unwrap_or(0.0);
-    let max_magnitude = magnitude_bins.iter().copied().fold(0.0, f64::max);
+    let (real_bins, imag_bins, amplitude_bins) = fft_components(&fft_bins);
+    let bin_count = amplitude_bins.len();
+    let first_real = real_bins.first().copied().unwrap_or(0.0);
+    let first_imag = imag_bins.first().copied().unwrap_or(0.0);
+    let first_amplitude = amplitude_bins.first().copied().unwrap_or(0.0);
+    let max_complex_component = real_bins
+        .iter()
+        .chain(imag_bins.iter())
+        .map(|value| value.abs())
+        .fold(0.0, f64::max)
+        .max(1.0);
+    let max_amplitude = amplitude_bins.iter().copied().fold(0.0, f64::max).max(1.0);
+
+    let real_points = fft_line_points(&real_bins, -max_complex_component, max_complex_component);
+    let imag_points = fft_line_points(&imag_bins, -max_complex_component, max_complex_component);
+    let amplitude_points = fft_line_points(&amplitude_bins, 0.0, max_amplitude);
+    let zero_line_y = FFT_CHART_HEIGHT / 2.0;
 
     rsx! {
         h1 { "FFT Draw" }
@@ -213,7 +259,7 @@ fn FftDraw() -> Element {
                         is_drawing.set(false);
                     },
                     polyline {
-                        points: "{line_points}",
+                        points: "{waveform_line_points}",
                         fill: "none",
                         stroke: "currentColor",
                         stroke_width: "2",
@@ -227,35 +273,44 @@ fn FftDraw() -> Element {
                     width: "100%",
                     height: "240",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
-                    for (index , magnitude) in magnitude_bins.iter().enumerate() {
-                        {
-                            let bar_width = FFT_CHART_WIDTH / magnitude_bin_count as f64;
-                            let normalized = if max_magnitude > 0.0 {
-                                *magnitude / max_magnitude
-                            } else {
-                                0.0
-                            };
-                            let bar_height = (normalized * FFT_CHART_HEIGHT).clamp(0.0, FFT_CHART_HEIGHT);
-                            let x = index as f64 * bar_width;
-                            let y = FFT_CHART_HEIGHT - bar_height;
-                            rsx! {
-                                rect {
-                                    x: "{x}",
-                                    y: "{y}",
-                                    width: "{bar_width}",
-                                    height: "{bar_height}",
-                                    fill: "currentColor",
-                                }
-                            }
-                        }
+                    line {
+                        x1: "0",
+                        y1: "{zero_line_y}",
+                        x2: "{FFT_CHART_WIDTH}",
+                        y2: "{zero_line_y}",
+                        stroke: "currentColor",
+                        stroke_width: "1",
+                        stroke_opacity: "0.4",
+                    }
+                    polyline {
+                        points: "{real_points}",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                    }
+                    polyline {
+                        points: "{imag_points}",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_dasharray: "8 4",
+                    }
+                    polyline {
+                        points: "{amplitude_points}",
+                        fill: "none",
+                        stroke: "currentColor",
+                        stroke_width: "2",
+                        stroke_dasharray: "2 3",
                     }
                 }
+                p { "Line styles: real (solid), imaginary (dashed), amplitude (dotted)" }
                 p { "Normalized samples: {normalized_sample_count}" }
                 p { "Selected sample size: {current_sample_size}" }
                 p { "First sample: {first_sample}" }
-                p { "Magnitude bins: {magnitude_bin_count}" }
-                p { "First magnitude: {first_magnitude}" }
-                p { "Max magnitude: {max_magnitude}" }
+                p { "FFT bins: {bin_count}" }
+                p { "First real: {first_real}" }
+                p { "First imaginary: {first_imag}" }
+                p { "First amplitude: {first_amplitude}" }
             }
         }
         Link { to: Route::Home {}, "Back to Home" }
