@@ -31,8 +31,16 @@ Implementation checklist:
 - [x] Add inverse reconstruction button to rebuild waveform from FFT.
 - [x] Add low-pass cutoff control for spectrum filtering.
 - [x] Add axis labels or frequency markers for readability.
-- [ ] Handle empty/flat input and other edge cases gracefully.
-- [ ] Verify behavior in wasm/web target and document any limitations.
+- [x] Handle empty/flat input and other edge cases gracefully.
+- [x] Verify behavior in wasm/web target and document any limitations.
+
+WASM/Web verification and limitations:
+
+- Verified compile success for web target with `cargo check --target wasm32-unknown-unknown`.
+- Empty state is explicit: no waveform means no FFT bins, and reconstruction is disabled.
+- Flat input is handled with an explanatory message (expected strong DC component).
+- Interaction currently uses mouse events (`onmousedown` / `onmousemove` / `onmouseup`), so touch and pen behavior may vary by browser/device.
+- Drawing does not capture pointer outside the waveform SVG; dragging outside ends drawing until pointer returns.
 
 Definition of Done:
 

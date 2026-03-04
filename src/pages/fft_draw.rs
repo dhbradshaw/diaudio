@@ -30,7 +30,7 @@ fn normalize_waveform(points: &[(f64, f64)], sample_size: usize) -> Vec<f64> {
     }
 
     if points.is_empty() {
-        return vec![0.0; sample_size];
+        return Vec::new();
     }
 
     let mut normalized = Vec::with_capacity(sample_size);
@@ -217,10 +217,25 @@ pub fn FftDraw() -> Element {
 
     let current_sample_size = *sample_size.read();
     let current_lowpass_cutoff_percent = *lowpass_cutoff_percent.read();
+    let has_waveform_input = !waveform_snapshot.is_empty();
     let normalized_samples = normalize_waveform(&waveform_snapshot, current_sample_size);
     let normalized_sample_count = normalized_samples.len();
+    let (min_sample, max_sample) = if normalized_samples.is_empty() {
+        (0.0, 0.0)
+    } else {
+        normalized_samples.iter().fold(
+            (f64::INFINITY, f64::NEG_INFINITY),
+            |(min_value, max_value), sample| (min_value.min(*sample), max_value.max(*sample)),
+        )
+    };
+    let sample_span = max_sample - min_sample;
+    let is_flat_input = has_waveform_input && sample_span <= 1e-6;
     let first_sample = normalized_samples.first().copied().unwrap_or(0.0);
-    let fft_bins = run_fft(&normalized_samples);
+    let fft_bins = if has_waveform_input {
+        run_fft(&normalized_samples)
+    } else {
+        Vec::new()
+    };
     let filtered_fft_bins = apply_lowpass(&fft_bins, current_lowpass_cutoff_percent);
     let fft_bins_for_reconstruction = filtered_fft_bins.clone();
     let (real_bins, imag_bins, amplitude_bins) = fft_components(&filtered_fft_bins);
@@ -271,7 +286,7 @@ pub fn FftDraw() -> Element {
                     }
                     button {
                         r#type: "button",
-                        disabled: waveform_snapshot.is_empty(),
+                        disabled: fft_bins_for_reconstruction.is_empty(),
                         onclick: move |_| {
                             is_drawing.set(false);
                             let reconstructed_samples = run_ifft(&fft_bins_for_reconstruction);
@@ -345,6 +360,11 @@ pub fn FftDraw() -> Element {
             }
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 1rem;",
                 h2 { "FFT" }
+                if !has_waveform_input {
+                    p { "Draw a waveform to generate FFT data." }
+                } else if is_flat_input {
+                    p { "Flat waveform detected: most energy is in the DC bin (near b0)." }
+                }
                 svg {
                     view_box: "0 0 600 240",
                     width: "100%",
