@@ -46,7 +46,7 @@ Definition of Done:
 
 - [x] Drawing interaction feels responsive with no visible stutter on normal drag.
 - [x] FFT graph updates correctly within one interaction frame after drawing changes.
-- [ ] Dominant frequency peaks are plausible for simple test waves (e.g., sine-like input).
+- [x] Dominant frequency peaks are plausible for simple test waves (e.g., sine-like input).
 - [x] Clear/reset returns both waveform and FFT view to a known empty state.
 - [x] Layout remains usable on common desktop widths without overlap/clipping.
 - [x] No console errors during normal use of `/fft-draw`.
