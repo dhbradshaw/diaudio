@@ -278,6 +278,14 @@ fn FftDraw() -> Element {
     let imag_points = fft_line_points(&imag_bins, -max_complex_component, max_complex_component);
     let amplitude_points = fft_line_points(&amplitude_bins, 0.0, max_amplitude);
     let zero_line_y = FFT_CHART_HEIGHT / 2.0;
+    let frequency_markers = [0.0, 0.25, 0.5, 0.75, 1.0]
+        .iter()
+        .map(|ratio| {
+            let x = ratio * FFT_CHART_WIDTH;
+            let bin = ((bin_count.saturating_sub(1)) as f64 * ratio).round() as usize;
+            (x, bin, format!("{:.0}%", ratio * 100.0))
+        })
+        .collect::<Vec<_>>();
 
     rsx! {
         h1 { "FFT Draw" }
@@ -375,6 +383,26 @@ fn FftDraw() -> Element {
                     width: "100%",
                     height: "240",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
+                    for (marker_x, marker_bin, marker_label) in frequency_markers.iter() {
+                        line {
+                            x1: "{marker_x}",
+                            y1: "0",
+                            x2: "{marker_x}",
+                            y2: "{FFT_CHART_HEIGHT}",
+                            stroke: "currentColor",
+                            stroke_width: "1",
+                            stroke_opacity: "0.15",
+                        }
+                        text {
+                            x: "{marker_x}",
+                            y: "{FFT_CHART_HEIGHT - 6.0}",
+                            text_anchor: "middle",
+                            font_size: "10",
+                            fill: "currentColor",
+                            fill_opacity: "0.8",
+                            "{marker_label} (b{marker_bin})"
+                        }
+                    }
                     line {
                         x1: "0",
                         y1: "{zero_line_y}",
@@ -406,6 +434,7 @@ fn FftDraw() -> Element {
                     }
                 }
                 p { "Line styles: real (solid), imaginary (dashed), amplitude (dotted)" }
+                p { "Frequency markers: 0% (DC) to 100% (Nyquist)" }
                 p { "Normalized samples: {normalized_sample_count}" }
                 p { "Selected sample size: {current_sample_size}" }
                 p { "Low-pass cutoff: {current_lowpass_cutoff_percent.round()}% (bin {cutoff_bin})" }
