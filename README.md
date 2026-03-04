@@ -15,6 +15,7 @@ This is just a pointer to all the different tools, pages, and games.
 Route: `/fft-draw`
 
 Draw a wave form on the left and see its FFT on the right.
+You can also click **Recreate from FFT** to reconstruct the waveform from the current FFT bins (inverse transform).
 
 Implementation checklist:
 
@@ -26,6 +27,7 @@ Implementation checklist:
 - [x] Convert FFT output to magnitudes (linear or dB scale).
 - [x] Render FFT bins as a chart/bars on the right panel.
 - [x] Add controls for clear/reset and sample-size selection.
+- [x] Add inverse reconstruction button to rebuild waveform from FFT.
 - [ ] Add axis labels or frequency markers for readability.
 - [ ] Handle empty/flat input and other edge cases gracefully.
 - [ ] Verify behavior in wasm/web target and document any limitations.

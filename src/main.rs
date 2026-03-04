@@ -85,6 +85,47 @@ fn run_fft(samples: &[f64]) -> Vec<Complex<f64>> {
     buffer
 }
 
+fn run_ifft(fft_bins: &[Complex<f64>]) -> Vec<f64> {
+    if fft_bins.is_empty() {
+        return Vec::new();
+    }
+
+    let mut planner = FftPlanner::<f64>::new();
+    let ifft = planner.plan_fft_inverse(fft_bins.len());
+    let mut buffer = fft_bins.to_vec();
+
+    ifft.process(&mut buffer);
+
+    let scale = 1.0 / fft_bins.len() as f64;
+    buffer
+        .iter()
+        .map(|sample| (sample.re * scale).clamp(-1.0, 1.0))
+        .collect()
+}
+
+fn samples_to_waveform_points(samples: &[f64]) -> Vec<(f64, f64)> {
+    if samples.is_empty() {
+        return Vec::new();
+    }
+
+    let mut points = Vec::with_capacity(samples.len());
+    let denominator = (samples.len().saturating_sub(1)) as f64;
+
+    for (index, sample) in samples.iter().enumerate() {
+        let normalized_x = if denominator > 0.0 {
+            index as f64 / denominator
+        } else {
+            0.0
+        };
+        let x = normalized_x * (WAVEFORM_WIDTH - 1.0);
+        let y =
+            ((1.0 - sample.clamp(-1.0, 1.0)) * 0.5 * WAVEFORM_HEIGHT).clamp(0.0, WAVEFORM_HEIGHT);
+        points.push((x, y));
+    }
+
+    points
+}
+
 fn fft_components(fft_bins: &[Complex<f64>]) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
     if fft_bins.is_empty() {
         return (Vec::new(), Vec::new(), Vec::new());
@@ -186,6 +227,7 @@ fn FftDraw() -> Element {
     let normalized_sample_count = normalized_samples.len();
     let first_sample = normalized_samples.first().copied().unwrap_or(0.0);
     let fft_bins = run_fft(&normalized_samples);
+    let fft_bins_for_reconstruction = fft_bins.clone();
     let (real_bins, imag_bins, amplitude_bins) = fft_components(&fft_bins);
     let bin_count = amplitude_bins.len();
     let first_real = real_bins.first().copied().unwrap_or(0.0);
@@ -218,6 +260,17 @@ fn FftDraw() -> Element {
                             waveform_points.set(Vec::new());
                         },
                         "Clear"
+                    }
+                    button {
+                        r#type: "button",
+                        disabled: waveform_snapshot.is_empty(),
+                        onclick: move |_| {
+                            is_drawing.set(false);
+                            let reconstructed_samples = run_ifft(&fft_bins_for_reconstruction);
+                            let reconstructed_points = samples_to_waveform_points(&reconstructed_samples);
+                            waveform_points.set(reconstructed_points);
+                        },
+                        "Recreate from FFT"
                     }
                     label { "Sample size" }
                     select {
