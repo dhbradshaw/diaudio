@@ -9,6 +9,49 @@ const FFT_CHART_WIDTH: f64 = 600.0;
 const FFT_CHART_HEIGHT: f64 = 240.0;
 const SAMPLE_SIZE_OPTIONS: [usize; 4] = [128, 256, 512, 1024];
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TestSignalKind {
+    SinX,
+    SinXPlusSin2X,
+}
+
+impl TestSignalKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SinX => "sin(x)",
+            Self::SinXPlusSin2X => "sin(x) + sin(2x)",
+        }
+    }
+}
+
+fn test_signal_samples(sample_count: usize, signal_kind: TestSignalKind) -> Vec<f64> {
+    if sample_count == 0 {
+        return Vec::new();
+    }
+
+    let denominator = (sample_count.saturating_sub(1)) as f64;
+    (0..sample_count)
+        .map(|index| {
+            let t = if denominator > 0.0 {
+                index as f64 / denominator
+            } else {
+                0.0
+            };
+            let x = std::f64::consts::TAU * t;
+            match signal_kind {
+                TestSignalKind::SinX => x.sin(),
+                TestSignalKind::SinXPlusSin2X => ((x.sin() + (2.0 * x).sin()) * 0.5).clamp(-1.0, 1.0),
+            }
+        })
+        .collect()
+}
+
+fn test_signal_waveform_points(signal_kind: TestSignalKind) -> Vec<(f64, f64)> {
+    let sample_count = WAVEFORM_WIDTH as usize;
+    let samples = test_signal_samples(sample_count, signal_kind);
+    samples_to_waveform_points(&samples)
+}
+
 fn clamp_waveform_coordinates(x: f64, y: f64) -> (f64, f64) {
     (
         x.round().clamp(0.0, WAVEFORM_WIDTH - 1.0),
@@ -237,6 +280,7 @@ fn fft_line_points(values: &[f64], min_value: f64, max_value: f64) -> String {
 pub fn FftDraw() -> Element {
     let mut waveform_points = use_signal(Vec::<(f64, f64)>::new);
     let mut is_drawing = use_signal(|| false);
+    let mut active_test_signal = use_signal(|| None::<TestSignalKind>);
     let mut last_draw_position = use_signal(|| None::<(f64, f64)>);
     let mut sample_size = use_signal(|| DEFAULT_SAMPLE_SIZE);
     let mut lowpass_cutoff_percent = use_signal(|| 100.0f64);
@@ -314,6 +358,7 @@ pub fn FftDraw() -> Element {
                         r#type: "button",
                         onclick: move |_| {
                             is_drawing.set(false);
+                            active_test_signal.set(None);
                             last_draw_position.set(None);
                             waveform_points.set(Vec::new());
                         },
@@ -321,9 +366,38 @@ pub fn FftDraw() -> Element {
                     }
                     button {
                         r#type: "button",
+                        onclick: move |_| {
+                            is_drawing.set(false);
+                            last_draw_position.set(None);
+                            active_test_signal.set(Some(TestSignalKind::SinX));
+                            waveform_points.set(test_signal_waveform_points(TestSignalKind::SinX));
+                        },
+                        "Use Test Signal: sin(x)"
+                    }
+                    button {
+                        r#type: "button",
+                        onclick: move |_| {
+                            is_drawing.set(false);
+                            last_draw_position.set(None);
+                            active_test_signal.set(Some(TestSignalKind::SinXPlusSin2X));
+                            waveform_points.set(test_signal_waveform_points(TestSignalKind::SinXPlusSin2X));
+                        },
+                        "Use Test Signal: sin(x) + sin(2x)"
+                    }
+                    button {
+                        r#type: "button",
+                        disabled: active_test_signal.read().is_none(),
+                        onclick: move |_| {
+                            active_test_signal.set(None);
+                        },
+                        "Use Draw Mode"
+                    }
+                    button {
+                        r#type: "button",
                         disabled: fft_bins_for_reconstruction.is_empty(),
                         onclick: move |_| {
                             is_drawing.set(false);
+                            active_test_signal.set(None);
                             last_draw_position.set(None);
                             let reconstructed_samples = run_ifft(&fft_bins_for_reconstruction);
                             let reconstructed_points = samples_to_waveform_points(&reconstructed_samples);
@@ -367,6 +441,7 @@ pub fn FftDraw() -> Element {
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px; touch-action: none; cursor: crosshair;",
                     onmousedown: move |event| {
                         is_drawing.set(true);
+                        active_test_signal.set(None);
                         let coordinates = event.element_coordinates();
                         let (x, y) = clamp_waveform_coordinates(coordinates.x, coordinates.y);
                         last_draw_position.set(Some((x, y)));
@@ -409,6 +484,8 @@ pub fn FftDraw() -> Element {
                 h2 { "FFT" }
                 if !has_waveform_input {
                     p { "Draw a waveform to generate FFT data." }
+                } else if let Some(signal_kind) = *active_test_signal.read() {
+                    p { "Using synthetic test input: {signal_kind.label()}." }
                 } else if is_flat_input {
                     p { "Flat waveform detected: most energy is in the DC bin (near b0)." }
                 }
