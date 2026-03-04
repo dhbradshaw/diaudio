@@ -362,7 +362,7 @@ pub fn FftDraw() -> Element {
                 }
                 svg {
                     view_box: "0 0 600 240",
-                    width: "100%",
+                    width: "600",
                     height: "240",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px; touch-action: none; cursor: crosshair;",
                     onmousedown: move |event| {
