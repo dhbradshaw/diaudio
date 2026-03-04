@@ -103,6 +103,31 @@ fn run_ifft(fft_bins: &[Complex<f64>]) -> Vec<f64> {
         .collect()
 }
 
+fn apply_lowpass(fft_bins: &[Complex<f64>], cutoff_percent: f64) -> Vec<Complex<f64>> {
+    if fft_bins.is_empty() {
+        return Vec::new();
+    }
+
+    let n = fft_bins.len();
+    let half_len = n / 2;
+    let clamped_percent = cutoff_percent.clamp(0.0, 100.0);
+    let max_cutoff = half_len.saturating_sub(1);
+    let cutoff_bin = ((max_cutoff as f64) * (clamped_percent / 100.0)).round() as usize;
+
+    fft_bins
+        .iter()
+        .enumerate()
+        .map(|(index, bin)| {
+            let mirrored_index = if index <= n / 2 { index } else { n - index };
+            if mirrored_index <= cutoff_bin {
+                *bin
+            } else {
+                Complex::new(0.0, 0.0)
+            }
+        })
+        .collect()
+}
+
 fn samples_to_waveform_points(samples: &[f64]) -> Vec<(f64, f64)> {
     if samples.is_empty() {
         return Vec::new();
@@ -213,6 +238,7 @@ fn FftDraw() -> Element {
     let mut waveform_points = use_signal(Vec::<(f64, f64)>::new);
     let mut is_drawing = use_signal(|| false);
     let mut sample_size = use_signal(|| DEFAULT_SAMPLE_SIZE);
+    let mut lowpass_cutoff_percent = use_signal(|| 100.0f64);
 
     let waveform_snapshot = waveform_points.read().clone();
 
@@ -223,13 +249,20 @@ fn FftDraw() -> Element {
         .join(" ");
 
     let current_sample_size = *sample_size.read();
+    let current_lowpass_cutoff_percent = *lowpass_cutoff_percent.read();
     let normalized_samples = normalize_waveform(&waveform_snapshot, current_sample_size);
     let normalized_sample_count = normalized_samples.len();
     let first_sample = normalized_samples.first().copied().unwrap_or(0.0);
     let fft_bins = run_fft(&normalized_samples);
-    let fft_bins_for_reconstruction = fft_bins.clone();
-    let (real_bins, imag_bins, amplitude_bins) = fft_components(&fft_bins);
+    let filtered_fft_bins = apply_lowpass(&fft_bins, current_lowpass_cutoff_percent);
+    let fft_bins_for_reconstruction = filtered_fft_bins.clone();
+    let (real_bins, imag_bins, amplitude_bins) = fft_components(&filtered_fft_bins);
     let bin_count = amplitude_bins.len();
+    let cutoff_bin = if bin_count > 0 {
+        ((bin_count - 1) as f64 * (current_lowpass_cutoff_percent / 100.0)).round() as usize
+    } else {
+        0
+    };
     let first_real = real_bins.first().copied().unwrap_or(0.0);
     let first_imag = imag_bins.first().copied().unwrap_or(0.0);
     let first_amplitude = amplitude_bins.first().copied().unwrap_or(0.0);
@@ -284,6 +317,22 @@ fn FftDraw() -> Element {
                             option { value: "{option_size}", "{option_size}" }
                         }
                     }
+                }
+                div { style: "display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap;",
+                    label { "Low-pass cutoff" }
+                    input {
+                        r#type: "range",
+                        min: "0",
+                        max: "100",
+                        step: "1",
+                        value: "{current_lowpass_cutoff_percent}",
+                        oninput: move |event| {
+                            if let Ok(next_value) = event.value().parse::<f64>() {
+                                lowpass_cutoff_percent.set(next_value.clamp(0.0, 100.0));
+                            }
+                        },
+                    }
+                    span { "{current_lowpass_cutoff_percent.round()}% (bin {cutoff_bin})" }
                 }
                 svg {
                     view_box: "0 0 600 240",
@@ -359,6 +408,7 @@ fn FftDraw() -> Element {
                 p { "Line styles: real (solid), imaginary (dashed), amplitude (dotted)" }
                 p { "Normalized samples: {normalized_sample_count}" }
                 p { "Selected sample size: {current_sample_size}" }
+                p { "Low-pass cutoff: {current_lowpass_cutoff_percent.round()}% (bin {cutoff_bin})" }
                 p { "First sample: {first_sample}" }
                 p { "FFT bins: {bin_count}" }
                 p { "First real: {first_real}" }
