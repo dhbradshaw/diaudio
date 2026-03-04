@@ -13,6 +13,7 @@ const SAMPLE_SIZE_OPTIONS: [usize; 4] = [128, 256, 512, 1024];
 enum TestSignalKind {
     SinX,
     SinXPlusSin2X,
+    SinXPlusSin16X,
 }
 
 impl TestSignalKind {
@@ -20,6 +21,48 @@ impl TestSignalKind {
         match self {
             Self::SinX => "sin(x)",
             Self::SinXPlusSin2X => "sin(x) + sin(2x)",
+            Self::SinXPlusSin16X => "sin(x) + sin(16x)",
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PresetSelection {
+    DrawMode,
+    Clear,
+    SinX,
+    SinXPlusSin2X,
+    SinXPlusSin16X,
+}
+
+impl PresetSelection {
+    fn value(self) -> &'static str {
+        match self {
+            Self::DrawMode => "draw",
+            Self::Clear => "clear",
+            Self::SinX => "sin_x",
+            Self::SinXPlusSin2X => "sin_x_plus_sin_2x",
+            Self::SinXPlusSin16X => "sin_x_plus_sin_16x",
+        }
+    }
+
+    fn from_value(value: &str) -> Option<Self> {
+        match value {
+            "draw" => Some(Self::DrawMode),
+            "clear" => Some(Self::Clear),
+            "sin_x" => Some(Self::SinX),
+            "sin_x_plus_sin_2x" => Some(Self::SinXPlusSin2X),
+            "sin_x_plus_sin_16x" => Some(Self::SinXPlusSin16X),
+            _ => None,
+        }
+    }
+
+    fn signal_kind(self) -> Option<TestSignalKind> {
+        match self {
+            Self::SinX => Some(TestSignalKind::SinX),
+            Self::SinXPlusSin2X => Some(TestSignalKind::SinXPlusSin2X),
+            Self::SinXPlusSin16X => Some(TestSignalKind::SinXPlusSin16X),
+            Self::DrawMode | Self::Clear => None,
         }
     }
 }
@@ -40,7 +83,12 @@ fn test_signal_samples(sample_count: usize, signal_kind: TestSignalKind) -> Vec<
             let x = std::f64::consts::TAU * t;
             match signal_kind {
                 TestSignalKind::SinX => x.sin(),
-                TestSignalKind::SinXPlusSin2X => ((x.sin() + (2.0 * x).sin()) * 0.5).clamp(-1.0, 1.0),
+                TestSignalKind::SinXPlusSin2X => {
+                    ((x.sin() + (2.0 * x).sin()) * 0.5).clamp(-1.0, 1.0)
+                }
+                TestSignalKind::SinXPlusSin16X => {
+                    ((x.sin() + (16.0 * x).sin()) * 0.5).clamp(-1.0, 1.0)
+                }
             }
         })
         .collect()
@@ -281,6 +329,7 @@ pub fn FftDraw() -> Element {
     let mut waveform_points = use_signal(Vec::<(f64, f64)>::new);
     let mut is_drawing = use_signal(|| false);
     let mut active_test_signal = use_signal(|| None::<TestSignalKind>);
+    let mut preset_selection = use_signal(|| PresetSelection::DrawMode);
     let mut last_draw_position = use_signal(|| None::<(f64, f64)>);
     let mut sample_size = use_signal(|| DEFAULT_SAMPLE_SIZE);
     let mut lowpass_cutoff_percent = use_signal(|| 100.0f64);
@@ -354,43 +403,43 @@ pub fn FftDraw() -> Element {
                 h2 { "Waveform" }
                 p { "Click and drag to draw." }
                 div { style: "display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem;",
-                    button {
-                        r#type: "button",
-                        onclick: move |_| {
-                            is_drawing.set(false);
-                            active_test_signal.set(None);
-                            last_draw_position.set(None);
-                            waveform_points.set(Vec::new());
-                        },
-                        "Clear"
-                    }
-                    button {
-                        r#type: "button",
-                        onclick: move |_| {
+                    label { "Preset signal" }
+                    select {
+                        value: "{preset_selection.read().value()}",
+                        onchange: move |event| {
+                            let Some(selection) = PresetSelection::from_value(&event.value()) else {
+                                return;
+                            };
+
                             is_drawing.set(false);
                             last_draw_position.set(None);
-                            active_test_signal.set(Some(TestSignalKind::SinX));
-                            waveform_points.set(test_signal_waveform_points(TestSignalKind::SinX));
+
+                            match selection {
+                                PresetSelection::DrawMode => {
+                                    active_test_signal.set(None);
+                                    preset_selection.set(PresetSelection::DrawMode);
+                                }
+                                PresetSelection::Clear => {
+                                    active_test_signal.set(None);
+                                    waveform_points.set(Vec::new());
+                                    preset_selection.set(PresetSelection::DrawMode);
+                                }
+                                PresetSelection::SinX
+                                | PresetSelection::SinXPlusSin2X
+                                | PresetSelection::SinXPlusSin16X => {
+                                    if let Some(signal_kind) = selection.signal_kind() {
+                                        active_test_signal.set(Some(signal_kind));
+                                        waveform_points.set(test_signal_waveform_points(signal_kind));
+                                        preset_selection.set(selection);
+                                    }
+                                }
+                            }
                         },
-                        "Use Test Signal: sin(x)"
-                    }
-                    button {
-                        r#type: "button",
-                        onclick: move |_| {
-                            is_drawing.set(false);
-                            last_draw_position.set(None);
-                            active_test_signal.set(Some(TestSignalKind::SinXPlusSin2X));
-                            waveform_points.set(test_signal_waveform_points(TestSignalKind::SinXPlusSin2X));
-                        },
-                        "Use Test Signal: sin(x) + sin(2x)"
-                    }
-                    button {
-                        r#type: "button",
-                        disabled: active_test_signal.read().is_none(),
-                        onclick: move |_| {
-                            active_test_signal.set(None);
-                        },
-                        "Use Draw Mode"
+                        option { value: "draw", "Draw mode" }
+                        option { value: "clear", "Clear (empty waveform)" }
+                        option { value: "sin_x", "sin(x)" }
+                        option { value: "sin_x_plus_sin_2x", "sin(x) + sin(2x)" }
+                        option { value: "sin_x_plus_sin_16x", "sin(x) + sin(16x)" }
                     }
                     button {
                         r#type: "button",
@@ -398,6 +447,7 @@ pub fn FftDraw() -> Element {
                         onclick: move |_| {
                             is_drawing.set(false);
                             active_test_signal.set(None);
+                            preset_selection.set(PresetSelection::DrawMode);
                             last_draw_position.set(None);
                             let reconstructed_samples = run_ifft(&fft_bins_for_reconstruction);
                             let reconstructed_points = samples_to_waveform_points(&reconstructed_samples);
@@ -442,6 +492,7 @@ pub fn FftDraw() -> Element {
                     onmousedown: move |event| {
                         is_drawing.set(true);
                         active_test_signal.set(None);
+                        preset_selection.set(PresetSelection::DrawMode);
                         let coordinates = event.element_coordinates();
                         let (x, y) = clamp_waveform_coordinates(coordinates.x, coordinates.y);
                         last_draw_position.set(Some((x, y)));
