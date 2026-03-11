@@ -9,6 +9,65 @@ const SPECTRUM_HEIGHT: f64 = 180.0;
 const WAVEFORM_BINS: usize = 160;
 const SPECTRUM_BINS: usize = 96;
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn estimate_peak_frequency_hz(spectrum: &[u8], sample_rate_hz: f32, fft_size: usize) -> Option<f32> {
+    if spectrum.len() < 3 || sample_rate_hz <= 0.0 || fft_size == 0 {
+        return None;
+    }
+
+    let (peak_index, peak_value) = spectrum
+        .iter()
+        .enumerate()
+        .skip(1)
+        .max_by_key(|(_, value)| **value)?;
+
+    if *peak_value < 20 {
+        return None;
+    }
+
+    let peak_bin = if peak_index > 0 && peak_index + 1 < spectrum.len() {
+        let left = spectrum[peak_index - 1] as f32;
+        let center = spectrum[peak_index] as f32;
+        let right = spectrum[peak_index + 1] as f32;
+        let denominator = left - 2.0 * center + right;
+
+        if denominator.abs() > f32::EPSILON {
+            let offset = 0.5 * (left - right) / denominator;
+            peak_index as f32 + offset.clamp(-0.5, 0.5)
+        } else {
+            peak_index as f32
+        }
+    } else {
+        peak_index as f32
+    };
+
+    let frequency_hz = peak_bin * sample_rate_hz / fft_size as f32;
+    if (50.0..=2000.0).contains(&frequency_hz) {
+        Some(frequency_hz)
+    } else {
+        None
+    }
+}
+
+fn frequency_to_note_label(frequency_hz: f32) -> Option<String> {
+    if frequency_hz <= 0.0 {
+        return None;
+    }
+
+    let midi = 69.0 + 12.0 * (frequency_hz / 440.0).log2();
+    let nearest = midi.round() as i32;
+    if !(0..=127).contains(&nearest) {
+        return None;
+    }
+
+    let note_names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    let note = note_names[(nearest.rem_euclid(12)) as usize];
+    let octave = nearest / 12 - 1;
+    let cents = ((midi - nearest as f32) * 100.0).round() as i32;
+
+    Some(format!("{note}{octave} ({cents:+}c)"))
+}
+
 #[cfg(target_arch = "wasm32")]
 mod web_audio {
     use super::{SPECTRUM_BINS, WAVEFORM_BINS};
@@ -68,12 +127,18 @@ mod web_audio {
         })
     }
 
-    pub fn sample_frame(runtime: &AudioRuntime) -> (Vec<f32>, Vec<f32>, f32) {
+    pub fn sample_frame(runtime: &AudioRuntime) -> (Vec<f32>, Vec<f32>, f32, Option<f32>) {
         let mut waveform = vec![0u8; runtime.analyser.fft_size() as usize];
         runtime.analyser.get_byte_time_domain_data(&mut waveform);
 
         let mut spectrum = vec![0u8; runtime.analyser.frequency_bin_count() as usize];
         runtime.analyser.get_byte_frequency_data(&mut spectrum);
+
+        let peak_frequency_hz = super::estimate_peak_frequency_hz(
+            &spectrum,
+            runtime.context.sample_rate(),
+            runtime.analyser.fft_size() as usize,
+        );
 
         let sampled_waveform = resample_u8_to_f32(&waveform, WAVEFORM_BINS, true);
         let sampled_spectrum = resample_u8_to_f32(&spectrum, SPECTRUM_BINS, false);
@@ -85,7 +150,7 @@ mod web_audio {
             / sampled_waveform.len().max(1) as f32;
         let level_db = 20.0 * rms.sqrt().max(1e-6).log10();
 
-        (sampled_waveform, sampled_spectrum, level_db)
+        (sampled_waveform, sampled_spectrum, level_db, peak_frequency_hz)
     }
 
     pub fn close_runtime(runtime: &AudioRuntime) {
@@ -148,8 +213,8 @@ mod web_audio {
         Err("Real-time audio is only available in wasm32/browser builds".to_string())
     }
 
-    pub fn sample_frame(_: &AudioRuntime) -> (Vec<f32>, Vec<f32>, f32) {
-        (Vec::new(), Vec::new(), -120.0)
+    pub fn sample_frame(_: &AudioRuntime) -> (Vec<f32>, Vec<f32>, f32, Option<f32>) {
+        (Vec::new(), Vec::new(), -120.0, None)
     }
 
     pub fn close_runtime(_: &AudioRuntime) {}
@@ -220,6 +285,8 @@ pub fn RealTime() -> Element {
     let mut waveform = use_signal(|| vec![0.0f32; WAVEFORM_BINS]);
     let mut spectrum = use_signal(|| vec![0.0f32; SPECTRUM_BINS]);
     let mut level_db = use_signal(|| -120.0f32);
+    let mut pitch_hz = use_signal(|| None::<f32>);
+    let mut note_label = use_signal(|| "--".to_string());
     let mut sample_rate_hz = use_signal(|| 48_000.0f32);
     let mut analyser_fft_size = use_signal(|| 2048usize);
     let mut analyser_freq_bins = use_signal(|| 1024usize);
@@ -232,10 +299,16 @@ pub fn RealTime() -> Element {
                     runtime_ref.as_ref().map(web_audio::sample_frame)
                 };
 
-                if let Some((next_waveform, next_spectrum, next_level_db)) = frame {
+                if let Some((next_waveform, next_spectrum, next_level_db, next_pitch_hz)) = frame {
                     waveform.set(next_waveform);
                     spectrum.set(next_spectrum);
                     level_db.set(next_level_db);
+                    pitch_hz.set(next_pitch_hz);
+                    note_label.set(
+                        next_pitch_hz
+                            .and_then(frequency_to_note_label)
+                            .unwrap_or_else(|| "--".to_string()),
+                    );
                 }
 
                 TimeoutFuture::new(33).await;
@@ -254,6 +327,8 @@ pub fn RealTime() -> Element {
     let current_sample_rate_hz = *sample_rate_hz.read();
     let current_fft_size = *analyser_fft_size.read();
     let current_freq_bins = *analyser_freq_bins.read();
+    let current_pitch_hz = *pitch_hz.read();
+    let current_note_label = note_label.read().clone();
     let nyquist_hz = (current_sample_rate_hz / 2.0).max(1.0);
     let waveform_total_ms = ((current_fft_size as f32 / current_sample_rate_hz.max(1.0)) * 1000.0).max(0.1);
 
@@ -311,10 +386,10 @@ pub fn RealTime() -> Element {
                     spawn(async move {
                         match web_audio::initialize_audio_runtime().await {
                             Ok(next_runtime) => {
-                                let (next_sample_rate_hz, next_fft_size, next_freq_bins) =
-                                    web_audio::runtime_info(&next_runtime);
-                                    &next_runtime,
-                                );
+                                let runtime_meta = web_audio::runtime_info(&next_runtime);
+                                let next_sample_rate_hz = runtime_meta.0;
+                                let next_fft_size = runtime_meta.1;
+                                let next_freq_bins = runtime_meta.2;
                                 runtime.set(Some(next_runtime));
                                 sample_rate_hz.set(next_sample_rate_hz);
                                 analyser_fft_size.set(next_fft_size);
@@ -357,6 +432,8 @@ pub fn RealTime() -> Element {
                     waveform.set(vec![0.0; WAVEFORM_BINS]);
                     spectrum.set(vec![0.0; SPECTRUM_BINS]);
                     level_db.set(-120.0);
+                    pitch_hz.set(None);
+                    note_label.set("--".to_string());
                     status.set("Microphone released.".to_string());
                 },
                 "Release Mic"
@@ -365,6 +442,12 @@ pub fn RealTime() -> Element {
 
         p { "Status: {status}" }
         p { "Estimated level: {current_level_db:.1} dBFS" }
+        p {
+            "Estimated note: {current_note_label}"
+            if let Some(hz) = current_pitch_hz {
+                " ({hz:.1} Hz)"
+            }
+        }
         p {
             "Sample rate: {current_sample_rate_hz:.0} Hz | FFT size: {current_fft_size} | Frequency bins: {current_freq_bins}"
         }
