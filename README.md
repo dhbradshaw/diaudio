@@ -17,3 +17,9 @@ Route: `/fft-draw`
 Draw a wave form on the left and see its FFT on the right.
 You can also click **Recreate from FFT** to reconstruct the waveform from the current FFT bins (inverse transform).
 Use the low-pass cutoff slider to remove higher-frequency bins from the spectrum.
+
+### Real Time Sound visualizer
+
+Route: `/real-time`
+
+Displays representations of real-time audio. Requires microphone permissions.

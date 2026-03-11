@@ -2,6 +2,7 @@ use dioxus::prelude::*;
 mod pages;
 
 use pages::fft_draw::FftDraw;
+use pages::real_time::RealTime;
 
 fn main() {
     launch(App);
@@ -13,6 +14,8 @@ enum Route {
     Home {},
     #[route("/fft-draw")]
     FftDraw {},
+    #[route("/real-time")]
+    RealTime {},
 }
 
 #[component]
@@ -31,6 +34,9 @@ fn Home() -> Element {
             ul {
                 li {
                     Link { to: Route::FftDraw {}, "FFT Draw" }
+                }
+                li {
+                    Link { to: Route::RealTime {}, "Real Time" }
                 }
             }
         }
