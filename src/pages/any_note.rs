@@ -104,6 +104,53 @@ impl Accidental {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Waveform {
+    Sine,
+    Square,
+    Sawtooth,
+    Triangle,
+}
+
+impl Waveform {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Sine => "Sine (Pure)",
+            Self::Square => "Square (Harsh)",
+            Self::Sawtooth => "Sawtooth (Bright)",
+            Self::Triangle => "Triangle (Smooth)",
+        }
+    }
+
+    fn value(self) -> &'static str {
+        match self {
+            Self::Sine => "sine",
+            Self::Square => "square",
+            Self::Sawtooth => "sawtooth",
+            Self::Triangle => "triangle",
+        }
+    }
+
+    fn from_value(value: &str) -> Option<Self> {
+        match value {
+            "sine" => Some(Self::Sine),
+            "square" => Some(Self::Square),
+            "sawtooth" => Some(Self::Sawtooth),
+            "triangle" => Some(Self::Triangle),
+            _ => None,
+        }
+    }
+
+    fn to_oscillator_type(self) -> web_sys::OscillatorType {
+        match self {
+            Self::Sine => web_sys::OscillatorType::Sine,
+            Self::Square => web_sys::OscillatorType::Square,
+            Self::Sawtooth => web_sys::OscillatorType::Sawtooth,
+            Self::Triangle => web_sys::OscillatorType::Triangle,
+        }
+    }
+}
+
 fn note_to_midi(note: NoteName, accidental: Accidental, octave: u8) -> u8 {
     let semitones_from_c = note.semitones_from_c() + accidental.semitone_offset();
     let octave_offset = if semitones_from_c < 0 {
@@ -139,6 +186,7 @@ pub fn AnyNote() -> Element {
     let mut note = use_signal(|| NoteName::A);
     let mut accidental = use_signal(|| Accidental::Natural);
     let mut octave = use_signal(|| 4u8);
+    let mut waveform = use_signal(|| Waveform::Sine);
     let mut is_playing = use_signal(|| false);
     let mut status = use_signal(|| "Ready".to_string());
 
@@ -146,12 +194,13 @@ pub fn AnyNote() -> Element {
         let current_note = *note.read();
         let current_accidental = *accidental.read();
         let current_octave = *octave.read();
+        let current_waveform = *waveform.read();
         let midi = note_to_midi(current_note, current_accidental, current_octave);
         let frequency = midi_to_frequency(midi);
 
         spawn({
             async move {
-                if let Err(e) = start_synth(frequency).await {
+                if let Err(e) = start_synth(frequency, current_waveform).await {
                     status.set(format!("Error: {}", e));
                 } else {
                     is_playing.set(true);
@@ -180,7 +229,7 @@ pub fn AnyNote() -> Element {
                 h2 { "Note Selection" }
 
                 div { style: "display: grid; gap: 1rem;",
-                    div { style: "display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem;",
+                    div { style: "display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 0.5rem;",
                         div {
                             label { r#for: "note-select", "Note" }
                             select {
@@ -239,6 +288,29 @@ pub fn AnyNote() -> Element {
                                 }
                             }
                         }
+
+                        div {
+                            label { r#for: "waveform-select", "Tone" }
+                            select {
+                                id: "waveform-select",
+                                value: waveform.read().value(),
+                                onchange: move |event| {
+                                    if let Some(new_waveform) = Waveform::from_value(&event.value()) {
+                                        waveform.set(new_waveform);
+                                    }
+                                },
+                                option { value: "sine", label: "Sine (Pure)" }
+                                option { value: "square", label: "Square (Harsh)" }
+                                option {
+                                    value: "sawtooth",
+                                    label: "Sawtooth (Bright)",
+                                }
+                                option {
+                                    value: "triangle",
+                                    label: "Triangle (Smooth)",
+                                }
+                            }
+                        }
                     }
 
                     div { style: "padding: 1rem; background-color: rgba(100, 100, 100, 0.1); border-radius: 4px;",
@@ -266,8 +338,8 @@ pub fn AnyNote() -> Element {
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn start_synth(frequency: f32) -> Result<(), String> {
-    use web_sys::{AudioContext, OscillatorType};
+async fn start_synth(frequency: f32, waveform: Waveform) -> Result<(), String> {
+    use web_sys::AudioContext;
 
     // Stop any existing oscillator first
     let _ = stop_synth().await;
@@ -288,7 +360,7 @@ async fn start_synth(frequency: f32) -> Result<(), String> {
         .map_err(|err| format!("Could not create oscillator: {:?}", err))?;
 
     oscillator.frequency().set_value(frequency);
-    oscillator.set_type(OscillatorType::Sine);
+    oscillator.set_type(waveform.to_oscillator_type());
 
     oscillator
         .connect_with_audio_node(&gain_node)
@@ -310,7 +382,7 @@ async fn start_synth(frequency: f32) -> Result<(), String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-async fn start_synth(_frequency: f32) -> Result<(), String> {
+async fn start_synth(_frequency: f32, _waveform: Waveform) -> Result<(), String> {
     Err("Audio not available outside WASM".to_string())
 }
 
