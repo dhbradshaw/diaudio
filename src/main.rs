@@ -1,6 +1,7 @@
 use dioxus::prelude::*;
 mod pages;
 
+use pages::any_note::AnyNote;
 use pages::fft_draw::FftDraw;
 use pages::real_time::RealTime;
 
@@ -12,6 +13,8 @@ fn main() {
 enum Route {
     #[route("/")]
     Home {},
+    #[route("/any-note")]
+    AnyNote {},
     #[route("/fft-draw")]
     FftDraw {},
     #[route("/real-time")]
@@ -32,6 +35,9 @@ fn Home() -> Element {
         h1 { "Diaudio" }
         nav {
             ul {
+                li {
+                    Link { to: Route::AnyNote {}, "Any Note" }
+                }
                 li {
                     Link { to: Route::FftDraw {}, "FFT Draw" }
                 }

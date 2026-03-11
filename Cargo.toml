@@ -13,12 +13,18 @@ wasm-bindgen-futures = "0.4.54"
 web-sys = {version = "0.3.81", features = [
   "AnalyserNode",
   "AudioContext",
+  "AudioDestinationNode",
   "AudioNode",
+  "AudioParam",
+  "GainNode",
   "MediaDevices",
   "MediaStream",
   "MediaStreamAudioSourceNode",
   "MediaStreamConstraints",
   "Navigator",
+  "OscillatorNode",
+  "OscillatorType",
+  "Storage",
   "Window",
 ]}
 
