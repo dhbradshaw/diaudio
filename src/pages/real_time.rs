@@ -274,6 +274,24 @@ pub fn RealTime() -> Element {
         })
         .collect::<Vec<_>>();
 
+    let waveform_y_ticks = [(-1.0_f32, "-1.0"), (-0.5_f32, "-0.5"), (0.0_f32, "0.0"), (0.5_f32, "0.5"), (1.0_f32, "1.0")]
+        .iter()
+        .map(|(value, label)| {
+            let normalized = ((*value + 1.0) / 2.0).clamp(0.0, 1.0) as f64;
+            let y = WAVEFORM_HEIGHT - normalized * WAVEFORM_HEIGHT;
+            (y, *label)
+        })
+        .collect::<Vec<_>>();
+
+    let spectrum_y_ticks = [(0.0_f32, "0.0"), (0.25_f32, "0.25"), (0.5_f32, "0.5"), (0.75_f32, "0.75"), (1.0_f32, "1.0")]
+        .iter()
+        .map(|(value, label)| {
+            let normalized = value.clamp(0.0, 1.0) as f64;
+            let y = SPECTRUM_HEIGHT - normalized * SPECTRUM_HEIGHT;
+            (y, *label)
+        })
+        .collect::<Vec<_>>();
+
     rsx! {
         h1 { "Real Time Sound Visualizer" }
         p { "Microphone data is processed in your browser via Web Audio." }
@@ -359,6 +377,26 @@ pub fn RealTime() -> Element {
                     width: "100%",
                     height: "180",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
+                    for (tick_y , tick_label) in waveform_y_ticks.iter() {
+                        line {
+                            x1: "0",
+                            y1: "{tick_y}",
+                            x2: "{WAVEFORM_WIDTH}",
+                            y2: "{tick_y}",
+                            stroke: "currentColor",
+                            stroke_width: "1",
+                            stroke_opacity: "0.12",
+                        }
+                        text {
+                            x: "4",
+                            y: "{tick_y - 2.0}",
+                            text_anchor: "start",
+                            font_size: "10",
+                            fill: "currentColor",
+                            fill_opacity: "0.85",
+                            "{tick_label}"
+                        }
+                    }
                     for (tick_x , tick_ms) in waveform_x_ticks.iter() {
                         line {
                             x1: "{tick_x}",
@@ -396,6 +434,7 @@ pub fn RealTime() -> Element {
                     }
                 }
                 p { "Time axis: 0 ms to {waveform_total_ms:.1} ms" }
+                p { "Amplitude axis: -1.0 to 1.0" }
             }
 
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 0.75rem;",
@@ -405,6 +444,26 @@ pub fn RealTime() -> Element {
                     width: "100%",
                     height: "180",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
+                    for (tick_y , tick_label) in spectrum_y_ticks.iter() {
+                        line {
+                            x1: "0",
+                            y1: "{tick_y}",
+                            x2: "{SPECTRUM_WIDTH}",
+                            y2: "{tick_y}",
+                            stroke: "currentColor",
+                            stroke_width: "1",
+                            stroke_opacity: "0.12",
+                        }
+                        text {
+                            x: "4",
+                            y: "{tick_y - 2.0}",
+                            text_anchor: "start",
+                            font_size: "10",
+                            fill: "currentColor",
+                            fill_opacity: "0.85",
+                            "{tick_label}"
+                        }
+                    }
                     for (tick_x , tick_hz) in spectrum_x_ticks.iter() {
                         line {
                             x1: "{tick_x}",
@@ -437,6 +496,7 @@ pub fn RealTime() -> Element {
                     }
                 }
                 p { "Frequency axis: 0 Hz to {format_hz_label(nyquist_hz)} (Nyquist)" }
+                p { "Magnitude axis: 0.0 to 1.0" }
             }
         }
 
