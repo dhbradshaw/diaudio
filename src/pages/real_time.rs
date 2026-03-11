@@ -92,6 +92,14 @@ mod web_audio {
         let _ = runtime.context.close();
     }
 
+    pub fn runtime_info(runtime: &AudioRuntime) -> (f32, usize, usize) {
+        (
+            runtime.context.sample_rate(),
+            runtime.analyser.fft_size() as usize,
+            runtime.analyser.frequency_bin_count() as usize,
+        )
+    }
+
     fn resample_u8_to_f32(input: &[u8], output_len: usize, centered: bool) -> Vec<f32> {
         if input.is_empty() || output_len == 0 {
             return Vec::new();
@@ -145,6 +153,18 @@ mod web_audio {
     }
 
     pub fn close_runtime(_: &AudioRuntime) {}
+
+    pub fn runtime_info(_: &AudioRuntime) -> (f32, usize, usize) {
+        (48_000.0, 2048, 1024)
+    }
+}
+
+fn format_hz_label(hz: f32) -> String {
+    if hz >= 1000.0 {
+        format!("{:.1} kHz", hz / 1000.0)
+    } else {
+        format!("{hz:.0} Hz")
+    }
 }
 
 fn line_points(values: &[f32], width: f64, height: f64, min: f32, max: f32) -> String {
@@ -200,6 +220,9 @@ pub fn RealTime() -> Element {
     let mut waveform = use_signal(|| vec![0.0f32; WAVEFORM_BINS]);
     let mut spectrum = use_signal(|| vec![0.0f32; SPECTRUM_BINS]);
     let mut level_db = use_signal(|| -120.0f32);
+    let mut sample_rate_hz = use_signal(|| 48_000.0f32);
+    let mut analyser_fft_size = use_signal(|| 2048usize);
+    let mut analyser_freq_bins = use_signal(|| 1024usize);
 
     let _poller = use_future(move || async move {
         loop {
@@ -228,6 +251,28 @@ pub fn RealTime() -> Element {
     let current_level_db = *level_db.read();
     let mic_active = *is_running.read();
     let has_runtime = runtime.read().is_some();
+    let current_sample_rate_hz = *sample_rate_hz.read();
+    let current_fft_size = *analyser_fft_size.read();
+    let current_freq_bins = *analyser_freq_bins.read();
+    let nyquist_hz = (current_sample_rate_hz / 2.0).max(1.0);
+    let waveform_total_ms = ((current_fft_size as f32 / current_sample_rate_hz.max(1.0)) * 1000.0).max(0.1);
+
+    let waveform_x_ticks = [0.0_f64, 0.25, 0.5, 0.75, 1.0]
+        .iter()
+        .map(|ratio| {
+            (
+                ratio * WAVEFORM_WIDTH,
+                waveform_total_ms * (*ratio as f32),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let spectrum_x_ticks = [0.0_f64, 0.25, 0.5, 0.75, 1.0]
+        .iter()
+        .map(|ratio| {
+            (ratio * SPECTRUM_WIDTH, nyquist_hz * (*ratio as f32))
+        })
+        .collect::<Vec<_>>();
 
     rsx! {
         h1 { "Real Time Sound Visualizer" }
@@ -248,7 +293,14 @@ pub fn RealTime() -> Element {
                     spawn(async move {
                         match web_audio::initialize_audio_runtime().await {
                             Ok(next_runtime) => {
+                                let (next_sample_rate_hz, next_fft_size, next_freq_bins) =
+                                    web_audio::runtime_info(&next_runtime);
+                                    &next_runtime,
+                                );
                                 runtime.set(Some(next_runtime));
+                                sample_rate_hz.set(next_sample_rate_hz);
+                                analyser_fft_size.set(next_fft_size);
+                                analyser_freq_bins.set(next_freq_bins);
                                 is_running.set(true);
                                 status.set("Microphone stream is running.".to_string());
                             }
@@ -295,6 +347,9 @@ pub fn RealTime() -> Element {
 
         p { "Status: {status}" }
         p { "Estimated level: {current_level_db:.1} dBFS" }
+        p {
+            "Sample rate: {current_sample_rate_hz:.0} Hz | FFT size: {current_fft_size} | Frequency bins: {current_freq_bins}"
+        }
 
         div { style: "display: grid; gap: 1rem; grid-template-columns: 1fr; max-width: 760px;",
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 0.75rem;",
@@ -304,6 +359,26 @@ pub fn RealTime() -> Element {
                     width: "100%",
                     height: "180",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
+                    for (tick_x , tick_ms) in waveform_x_ticks.iter() {
+                        line {
+                            x1: "{tick_x}",
+                            y1: "0",
+                            x2: "{tick_x}",
+                            y2: "{WAVEFORM_HEIGHT}",
+                            stroke: "currentColor",
+                            stroke_width: "1",
+                            stroke_opacity: "0.12",
+                        }
+                        text {
+                            x: "{tick_x}",
+                            y: "{WAVEFORM_HEIGHT - 6.0}",
+                            text_anchor: "middle",
+                            font_size: "10",
+                            fill: "currentColor",
+                            fill_opacity: "0.85",
+                            "{tick_ms:.1} ms"
+                        }
+                    }
                     line {
                         x1: "0",
                         y1: "90",
@@ -320,6 +395,7 @@ pub fn RealTime() -> Element {
                         stroke_width: "2",
                     }
                 }
+                p { "Time axis: 0 ms to {waveform_total_ms:.1} ms" }
             }
 
             section { style: "border: 1px solid currentColor; border-radius: 8px; padding: 0.75rem;",
@@ -329,6 +405,26 @@ pub fn RealTime() -> Element {
                     width: "100%",
                     height: "180",
                     style: "display: block; border: 1px solid currentColor; border-radius: 4px;",
+                    for (tick_x , tick_hz) in spectrum_x_ticks.iter() {
+                        line {
+                            x1: "{tick_x}",
+                            y1: "0",
+                            x2: "{tick_x}",
+                            y2: "{SPECTRUM_HEIGHT}",
+                            stroke: "currentColor",
+                            stroke_width: "1",
+                            stroke_opacity: "0.12",
+                        }
+                        text {
+                            x: "{tick_x}",
+                            y: "{SPECTRUM_HEIGHT - 6.0}",
+                            text_anchor: "middle",
+                            font_size: "10",
+                            fill: "currentColor",
+                            fill_opacity: "0.85",
+                            "{format_hz_label(*tick_hz)}"
+                        }
+                    }
                     for (x , y , w , h) in spectrum_bars {
                         rect {
                             x: "{x}",
@@ -340,6 +436,7 @@ pub fn RealTime() -> Element {
                         }
                     }
                 }
+                p { "Frequency axis: 0 Hz to {format_hz_label(nyquist_hz)} (Nyquist)" }
             }
         }
 
