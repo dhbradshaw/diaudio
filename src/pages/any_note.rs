@@ -166,12 +166,9 @@ pub fn AnyNote() -> Element {
     let handle_play_end = move |_| {
         spawn({
             async move {
-                if let Err(e) = stop_synth().await {
-                    status.set(format!("Error: {}", e));
-                } else {
-                    is_playing.set(false);
-                    status.set("Stopped".to_string());
-                }
+                let _ = stop_synth().await;
+                is_playing.set(false);
+                status.set("Ready".to_string());
             }
         });
     };
@@ -254,23 +251,14 @@ pub fn AnyNote() -> Element {
                         p { style: "font-weight: bold; font-size: 1.2em;", "{display_note}" }
                     }
 
-                    div { style: "display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;",
+                    div { style: "display: grid; gap: 0.5rem;",
                         button {
                             r#type: "button",
-                            disabled: *is_playing.read(),
                             onmousedown: handle_play_start,
                             onmouseup: handle_play_end,
                             onmouseleave: handle_play_end,
-                            style: "padding: 0.75rem; font-size: 1em; font-weight: bold; cursor: pointer;",
-                            "Play (Hold)"
-                        }
-
-                        button {
-                            r#type: "button",
-                            disabled: !*is_playing.read(),
-                            onclick: handle_play_end,
-                            style: "padding: 0.75rem; font-size: 1em;",
-                            "Stop"
+                            style: "padding: 1rem; font-size: 1.1em; font-weight: bold; cursor: pointer;",
+                            "Press and Hold to Play"
                         }
                     }
 
@@ -284,6 +272,9 @@ pub fn AnyNote() -> Element {
 #[cfg(target_arch = "wasm32")]
 async fn start_synth(frequency: f32) -> Result<(), String> {
     use web_sys::{AudioContext, OscillatorType};
+
+    // Stop any existing oscillator first
+    let _ = stop_synth().await;
 
     let context =
         AudioContext::new().map_err(|err| format!("Could not create AudioContext: {:?}", err))?;
@@ -313,6 +304,12 @@ async fn start_synth(frequency: f32) -> Result<(), String> {
         .start()
         .map_err(|_| "Could not start oscillator".to_string())?;
 
+    // Store oscillator for cleanup
+    let _ = AUDIO_STORE.with(|s| {
+        let mut store = s.borrow_mut();
+        *store = Some((oscillator, context, gain_node));
+    });
+
     Ok(())
 }
 
@@ -323,10 +320,22 @@ async fn start_synth(_frequency: f32) -> Result<(), String> {
 
 #[cfg(target_arch = "wasm32")]
 async fn stop_synth() -> Result<(), String> {
-    Ok(())
+    let result = AUDIO_STORE.with(|s| {
+        let mut store = s.borrow_mut();
+        if let Some((oscillator, _context, _gain)) = store.take() {
+            let _ = oscillator.stop();
+        }
+        Ok::<(), String>(())
+    });
+    result
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 async fn stop_synth() -> Result<(), String> {
     Err("Audio not available outside WASM".to_string())
+}
+
+#[cfg(target_arch = "wasm32")]
+thread_local! {
+    static AUDIO_STORE: std::cell::RefCell<Option<(web_sys::OscillatorNode, web_sys::AudioContext, web_sys::GainNode)>> = std::cell::RefCell::new(None);
 }
