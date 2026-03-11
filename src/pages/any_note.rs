@@ -142,8 +142,6 @@ pub fn AnyNote() -> Element {
     let mut is_playing = use_signal(|| false);
     let mut status = use_signal(|| "Ready".to_string());
 
-    let display_note = get_note_display(*note.read(), *accidental.read(), *octave.read());
-
     let handle_play_start = move |_| {
         let current_note = *note.read();
         let current_accidental = *accidental.read();
@@ -198,7 +196,7 @@ pub fn AnyNote() -> Element {
                                 option { value: "E", label: "E" }
                                 option { value: "F", label: "F" }
                                 option { value: "G", label: "G" }
-                                option { value: "A", label: "A", selected: true }
+                                option { value: "A", label: "A" }
                                 option { value: "B", label: "B" }
                             }
                         }
@@ -214,11 +212,7 @@ pub fn AnyNote() -> Element {
                                     }
                                 },
                                 option { value: "flat", label: "♭ Flat" }
-                                option {
-                                    value: "natural",
-                                    label: "♮ Natural",
-                                    selected: true,
-                                }
+                                option { value: "natural", label: "♮ Natural" }
                                 option { value: "sharp", label: "♯ Sharp" }
                             }
                         }
@@ -239,7 +233,7 @@ pub fn AnyNote() -> Element {
                                     (0..=8)
                                         .map(|oct| {
                                             rsx! {
-                                                option { value: "{oct}", label: "{oct}", selected: oct == 4 }
+                                                option { value: "{oct}", label: "{oct}" }
                                             }
                                         })
                                 }
@@ -248,7 +242,9 @@ pub fn AnyNote() -> Element {
                     }
 
                     div { style: "padding: 1rem; background-color: rgba(100, 100, 100, 0.1); border-radius: 4px;",
-                        p { style: "font-weight: bold; font-size: 1.2em;", "{display_note}" }
+                        p { style: "font-weight: bold; font-size: 1.2em;",
+                            "{get_note_display(*note.read(), *accidental.read(), *octave.read())}"
+                        }
                     }
 
                     div { style: "display: grid; gap: 0.5rem;",
